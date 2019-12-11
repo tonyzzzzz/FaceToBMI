@@ -50,15 +50,6 @@
     "* filters are 3x3\n",
     "* padding with one layer of zero to not schrink anything"
    ]
-  },
-  {
-   "cell_type": "code",
-   "execution_count": null,
-   "metadata": {},
-   "outputs": [],
-   "source": [
-    "mod"
-   ]
   }
  ]
 }

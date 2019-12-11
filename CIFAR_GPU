@@ -1,0 +1,285 @@
+{
+ "nbformat": 4,
+ "nbformat_minor": 2,
+ "metadata": {
+  "language_info": {
+   "name": "python",
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "version": "3.6.9"
+  },
+  "orig_nbformat": 2,
+  "file_extension": ".py",
+  "mimetype": "text/x-python",
+  "name": "python",
+  "npconvert_exporter": "python",
+  "pygments_lexer": "ipython3",
+  "version": 3
+ },
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 1,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import torch\n",
+    "import torch.nn as nn\n",
+    "import torch.nn.functional as F\n",
+    "import torch.optim as optim\n",
+    "from random import randint\n",
+    "import utils\n",
+    "import time"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 2,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": "cuda\n"
+    }
+   ],
+   "source": [
+    "device = torch.device(\"cuda\")\n",
+    "# device = torch.device(\"cpu\")\n",
+    "print(device)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 3,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": "torch.Size([10000])\n"
+    }
+   ],
+   "source": [
+    "from utils import check_cifar_dataset_exists\n",
+    "data_path = check_cifar_dataset_exists()\n",
+    "train_data = torch.load(data_path+\"cifar/train_data.pt\")\n",
+    "train_label = torch.load(data_path+\"cifar/train_label.pt\")\n",
+    "test_data = torch.load(data_path+\"cifar/test_data.pt\")\n",
+    "test_label = torch.load(data_path+\"cifar/test_label.pt\")\n",
+    "print(test_label.size())"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "### Create network"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 4,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": "three_layer_net(\n  (layer1): Linear(in_features=3072, out_features=500, bias=False)\n  (layer2): Linear(in_features=500, out_features=500, bias=False)\n  (layer3): Linear(in_features=500, out_features=10, bias=False)\n)\n"
+    }
+   ],
+   "source": [
+    "class three_layer_net(nn.Module):\n",
+    "    def __init__(self, input_size, hidden_size1, hidden_size2, output_size):\n",
+    "        super(three_layer_net, self).__init__()\n",
+    "        self.layer1 = nn.Linear(input_size, hidden_size1, bias=False)\n",
+    "        self.layer2 = nn.Linear(hidden_size1, hidden_size2, bias=False)\n",
+    "        self.layer3 = nn.Linear(hidden_size2, output_size, bias=False)\n",
+    "    def forward(self, x):\n",
+    "        y = self.layer1(x)\n",
+    "        y_hat = F.relu(y)\n",
+    "        z = self.layer2(y_hat)\n",
+    "        z_hat = F.relu(z)\n",
+    "        scores = self.layer3(z_hat)\n",
+    "        return scores\n",
+    "\n",
+    "net = three_layer_net(3072, 500, 500, 10)\n",
+    "# utils.display_num_param(net)\n",
+    "net = net.to(device)\n",
+    "print(net)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "execution_count": 15,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "### Setting criterion"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 5,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "criterion = nn.CrossEntropyLoss()\n",
+    "optimizer = optim.SGD(net.parameters(), lr=0.01)\n",
+    "bs = 200"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "### Function to run test"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 6,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def eval_on_test_set():\n",
+    "    running_error = 0\n",
+    "    num_batches = 0\n",
+    "    for i in range(0, 10000,bs):\n",
+    "        minibatch_data = test_data[i:i+bs]\n",
+    "        minibatch_label = test_label[i:i+bs]\n",
+    "\n",
+    "        # Send data to the GPU\n",
+    "        minibatch_data = minibatch_data.to(device)\n",
+    "        minibatch_label = minibatch_label.to(device)\n",
+    "\n",
+    "        # Reshape\n",
+    "        inputs = minibatch_data.view(bs, 3072)\n",
+    "        scores = net(inputs)\n",
+    "        \n",
+    "        # Calculate error\n",
+    "        error = utils.get_error(scores, minibatch_label)\n",
+    "        running_error += error.item()\n",
+    "        num_batches += 1\n",
+    "    total_error = running_error/num_batches\n",
+    "    print(\"Error on testing dataset:\", total_error*100)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "### Training with 200 epochs"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 7,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": "Epoch= 0  time= 0.8236792087554932  loss= 2.246888521194458  error 82.2740005016327\nError on testing dataset: 76.87000000476837\n---------\nEpoch= 50  time= 35.36853051185608  loss= 1.356490988254547  error 47.79800090789795\nError on testing dataset: 50.17000019550324\n---------\nEpoch= 100  time= 69.41368770599365  loss= 1.1203358647823334  error 39.30800149440765\nError on testing dataset: 46.370001435279846\n---------\nEpoch= 150  time= 103.3963258266449  loss= 0.9225745182037354  error 32.18800156116486\nError on testing dataset: 46.45000076293945\n---------\n"
+    }
+   ],
+   "source": [
+    "start_time = time.time()\n",
+    "for epoch in range(200):\n",
+    "    running_loss = 0\n",
+    "    running_error = 0\n",
+    "    num_batches = 0\n",
+    "    shuffled_indices = torch.randperm(50000)\n",
+    "    for count in range(0, 50000, bs):\n",
+    "\n",
+    "        # create a minibatch  \n",
+    "        indices = shuffled_indices[count:count+bs]\n",
+    "        minibatch_data = train_data[indices]\n",
+    "        minibatch_label = train_label[indices]\n",
+    "\n",
+    "        # Set the gradients to zeros\n",
+    "        optimizer.zero_grad()\n",
+    "\n",
+    "        # reshape the minibatch\n",
+    "        minibatch_data = minibatch_data.to(device)\n",
+    "        minibatch_label = minibatch_label.to(device)\n",
+    "        inputs = minibatch_data.view(bs, 3072)\n",
+    "\n",
+    "        # tell Pytorch to start tracking all operations that will be done on \"inputs\"\n",
+    "        inputs.requires_grad_()\n",
+    "\n",
+    "        scores = net(inputs)\n",
+    "        loss = criterion(scores, minibatch_label)\n",
+    "        loss.backward()\n",
+    "        optimizer.step()\n",
+    "\n",
+    "        # Computing statistics\n",
+    "        running_loss += loss.detach().item()\n",
+    "        error = utils.get_error(scores.detach(), minibatch_label)\n",
+    "        running_error += error.item()\n",
+    "        num_batches += 1\n",
+    "    # Compute the stat\n",
+    "    total_loss = running_loss/num_batches\n",
+    "    total_error = running_error/num_batches*100\n",
+    "    eslapsed = time.time() - start_time\n",
+    "\n",
+    "    if epoch%50 == 0:\n",
+    "        print(\"Epoch=\", epoch, \" time=\", eslapsed, \" loss=\", total_loss, \" error\", total_error)\n",
+    "        eval_on_test_set()\n",
+    "        print(\"---------\")\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 10,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "image/png": "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\n",
+      "image/svg+xml": "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"no\"?>\n<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\"\n  \"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n<!-- Created with matplotlib (https://matplotlib.org/) -->\n<svg height=\"248.919844pt\" version=\"1.1\" viewBox=\"0 0 251.565 248.919844\" width=\"251.565pt\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">\n <defs>\n  <style type=\"text/css\">\n*{stroke-linecap:butt;stroke-linejoin:round;}\n  </style>\n </defs>\n <g id=\"figure_1\">\n  <g id=\"patch_1\">\n   <path d=\"M 0 248.919844 \nL 251.565 248.919844 \nL 251.565 0 \nL 0 0 \nz\n\" style=\"fill:none;\"/>\n  </g>\n  <g id=\"axes_1\">\n   <g id=\"patch_2\">\n    <path d=\"M 26.925 225.041719 \nL 244.365 225.041719 \nL 244.365 7.601719 \nL 26.925 7.601719 \nz\n\" style=\"fill:#ffffff;\"/>\n   </g>\n   <g clip-path=\"url(#p73bfe13822)\">\n    <image height=\"218\" id=\"imagef3dc0c289f\" transform=\"scale(1 -1)translate(0 -218)\" width=\"218\" x=\"26.925\" xlink:href=\"data:image/png;base64,\n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\" y=\"-7.041719\"/>\n   </g>\n   <g id=\"matplotlib.axis_1\">\n    <g id=\"xtick_1\">\n     <g id=\"line2d_1\">\n      <defs>\n       <path d=\"M 0 0 \nL 0 3.5 \n\" id=\"mef00e96340\" style=\"stroke:#000000;stroke-width:0.8;\"/>\n      </defs>\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"30.3225\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_1\">\n      <!-- 0 -->\n      <defs>\n       <path d=\"M 31.78125 66.40625 \nQ 24.171875 66.40625 20.328125 58.90625 \nQ 16.5 51.421875 16.5 36.375 \nQ 16.5 21.390625 20.328125 13.890625 \nQ 24.171875 6.390625 31.78125 6.390625 \nQ 39.453125 6.390625 43.28125 13.890625 \nQ 47.125 21.390625 47.125 36.375 \nQ 47.125 51.421875 43.28125 58.90625 \nQ 39.453125 66.40625 31.78125 66.40625 \nz\nM 31.78125 74.21875 \nQ 44.046875 74.21875 50.515625 64.515625 \nQ 56.984375 54.828125 56.984375 36.375 \nQ 56.984375 17.96875 50.515625 8.265625 \nQ 44.046875 -1.421875 31.78125 -1.421875 \nQ 19.53125 -1.421875 13.0625 8.265625 \nQ 6.59375 17.96875 6.59375 36.375 \nQ 6.59375 54.828125 13.0625 64.515625 \nQ 19.53125 74.21875 31.78125 74.21875 \nz\n\" id=\"DejaVuSans-48\"/>\n      </defs>\n      <g transform=\"translate(27.14125 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_2\">\n     <g id=\"line2d_2\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"64.2975\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_2\">\n      <!-- 5 -->\n      <defs>\n       <path d=\"M 10.796875 72.90625 \nL 49.515625 72.90625 \nL 49.515625 64.59375 \nL 19.828125 64.59375 \nL 19.828125 46.734375 \nQ 21.96875 47.46875 24.109375 47.828125 \nQ 26.265625 48.1875 28.421875 48.1875 \nQ 40.625 48.1875 47.75 41.5 \nQ 54.890625 34.8125 54.890625 23.390625 \nQ 54.890625 11.625 47.5625 5.09375 \nQ 40.234375 -1.421875 26.90625 -1.421875 \nQ 22.3125 -1.421875 17.546875 -0.640625 \nQ 12.796875 0.140625 7.71875 1.703125 \nL 7.71875 11.625 \nQ 12.109375 9.234375 16.796875 8.0625 \nQ 21.484375 6.890625 26.703125 6.890625 \nQ 35.15625 6.890625 40.078125 11.328125 \nQ 45.015625 15.765625 45.015625 23.390625 \nQ 45.015625 31 40.078125 35.4375 \nQ 35.15625 39.890625 26.703125 39.890625 \nQ 22.75 39.890625 18.8125 39.015625 \nQ 14.890625 38.140625 10.796875 36.28125 \nz\n\" id=\"DejaVuSans-53\"/>\n      </defs>\n      <g transform=\"translate(61.11625 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_3\">\n     <g id=\"line2d_3\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"98.2725\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_3\">\n      <!-- 10 -->\n      <defs>\n       <path d=\"M 12.40625 8.296875 \nL 28.515625 8.296875 \nL 28.515625 63.921875 \nL 10.984375 60.40625 \nL 10.984375 69.390625 \nL 28.421875 72.90625 \nL 38.28125 72.90625 \nL 38.28125 8.296875 \nL 54.390625 8.296875 \nL 54.390625 0 \nL 12.40625 0 \nz\n\" id=\"DejaVuSans-49\"/>\n      </defs>\n      <g transform=\"translate(91.91 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-49\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_4\">\n     <g id=\"line2d_4\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"132.2475\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_4\">\n      <!-- 15 -->\n      <g transform=\"translate(125.885 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-49\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_5\">\n     <g id=\"line2d_5\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"166.2225\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_5\">\n      <!-- 20 -->\n      <defs>\n       <path d=\"M 19.1875 8.296875 \nL 53.609375 8.296875 \nL 53.609375 0 \nL 7.328125 0 \nL 7.328125 8.296875 \nQ 12.9375 14.109375 22.625 23.890625 \nQ 32.328125 33.6875 34.8125 36.53125 \nQ 39.546875 41.84375 41.421875 45.53125 \nQ 43.3125 49.21875 43.3125 52.78125 \nQ 43.3125 58.59375 39.234375 62.25 \nQ 35.15625 65.921875 28.609375 65.921875 \nQ 23.96875 65.921875 18.8125 64.3125 \nQ 13.671875 62.703125 7.8125 59.421875 \nL 7.8125 69.390625 \nQ 13.765625 71.78125 18.9375 73 \nQ 24.125 74.21875 28.421875 74.21875 \nQ 39.75 74.21875 46.484375 68.546875 \nQ 53.21875 62.890625 53.21875 53.421875 \nQ 53.21875 48.921875 51.53125 44.890625 \nQ 49.859375 40.875 45.40625 35.40625 \nQ 44.1875 33.984375 37.640625 27.21875 \nQ 31.109375 20.453125 19.1875 8.296875 \nz\n\" id=\"DejaVuSans-50\"/>\n      </defs>\n      <g transform=\"translate(159.86 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-50\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_6\">\n     <g id=\"line2d_6\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"200.1975\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_6\">\n      <!-- 25 -->\n      <g transform=\"translate(193.835 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-50\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"xtick_7\">\n     <g id=\"line2d_7\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"234.1725\" xlink:href=\"#mef00e96340\" y=\"225.041719\"/>\n      </g>\n     </g>\n     <g id=\"text_7\">\n      <!-- 30 -->\n      <defs>\n       <path d=\"M 40.578125 39.3125 \nQ 47.65625 37.796875 51.625 33 \nQ 55.609375 28.21875 55.609375 21.1875 \nQ 55.609375 10.40625 48.1875 4.484375 \nQ 40.765625 -1.421875 27.09375 -1.421875 \nQ 22.515625 -1.421875 17.65625 -0.515625 \nQ 12.796875 0.390625 7.625 2.203125 \nL 7.625 11.71875 \nQ 11.71875 9.328125 16.59375 8.109375 \nQ 21.484375 6.890625 26.8125 6.890625 \nQ 36.078125 6.890625 40.9375 10.546875 \nQ 45.796875 14.203125 45.796875 21.1875 \nQ 45.796875 27.640625 41.28125 31.265625 \nQ 36.765625 34.90625 28.71875 34.90625 \nL 20.21875 34.90625 \nL 20.21875 43.015625 \nL 29.109375 43.015625 \nQ 36.375 43.015625 40.234375 45.921875 \nQ 44.09375 48.828125 44.09375 54.296875 \nQ 44.09375 59.90625 40.109375 62.90625 \nQ 36.140625 65.921875 28.71875 65.921875 \nQ 24.65625 65.921875 20.015625 65.03125 \nQ 15.375 64.15625 9.8125 62.3125 \nL 9.8125 71.09375 \nQ 15.4375 72.65625 20.34375 73.4375 \nQ 25.25 74.21875 29.59375 74.21875 \nQ 40.828125 74.21875 47.359375 69.109375 \nQ 53.90625 64.015625 53.90625 55.328125 \nQ 53.90625 49.265625 50.4375 45.09375 \nQ 46.96875 40.921875 40.578125 39.3125 \nz\n\" id=\"DejaVuSans-51\"/>\n      </defs>\n      <g transform=\"translate(227.81 239.640156)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-51\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n   </g>\n   <g id=\"matplotlib.axis_2\">\n    <g id=\"ytick_1\">\n     <g id=\"line2d_8\">\n      <defs>\n       <path d=\"M 0 0 \nL -3.5 0 \n\" id=\"m55baa7695b\" style=\"stroke:#000000;stroke-width:0.8;\"/>\n      </defs>\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"10.999219\"/>\n      </g>\n     </g>\n     <g id=\"text_8\">\n      <!-- 0 -->\n      <g transform=\"translate(13.5625 14.798437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_2\">\n     <g id=\"line2d_9\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"44.974219\"/>\n      </g>\n     </g>\n     <g id=\"text_9\">\n      <!-- 5 -->\n      <g transform=\"translate(13.5625 48.773437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_3\">\n     <g id=\"line2d_10\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"78.949219\"/>\n      </g>\n     </g>\n     <g id=\"text_10\">\n      <!-- 10 -->\n      <g transform=\"translate(7.2 82.748437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-49\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_4\">\n     <g id=\"line2d_11\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"112.924219\"/>\n      </g>\n     </g>\n     <g id=\"text_11\">\n      <!-- 15 -->\n      <g transform=\"translate(7.2 116.723437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-49\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_5\">\n     <g id=\"line2d_12\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"146.899219\"/>\n      </g>\n     </g>\n     <g id=\"text_12\">\n      <!-- 20 -->\n      <g transform=\"translate(7.2 150.698437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-50\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_6\">\n     <g id=\"line2d_13\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"180.874219\"/>\n      </g>\n     </g>\n     <g id=\"text_13\">\n      <!-- 25 -->\n      <g transform=\"translate(7.2 184.673437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-50\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-53\"/>\n      </g>\n     </g>\n    </g>\n    <g id=\"ytick_7\">\n     <g id=\"line2d_14\">\n      <g>\n       <use style=\"stroke:#000000;stroke-width:0.8;\" x=\"26.925\" xlink:href=\"#m55baa7695b\" y=\"214.849219\"/>\n      </g>\n     </g>\n     <g id=\"text_14\">\n      <!-- 30 -->\n      <g transform=\"translate(7.2 218.648437)scale(0.1 -0.1)\">\n       <use xlink:href=\"#DejaVuSans-51\"/>\n       <use x=\"63.623047\" xlink:href=\"#DejaVuSans-48\"/>\n      </g>\n     </g>\n    </g>\n   </g>\n   <g id=\"patch_3\">\n    <path d=\"M 26.925 225.041719 \nL 26.925 7.601719 \n\" style=\"fill:none;stroke:#000000;stroke-linecap:square;stroke-linejoin:miter;stroke-width:0.8;\"/>\n   </g>\n   <g id=\"patch_4\">\n    <path d=\"M 244.365 225.041719 \nL 244.365 7.601719 \n\" style=\"fill:none;stroke:#000000;stroke-linecap:square;stroke-linejoin:miter;stroke-width:0.8;\"/>\n   </g>\n   <g id=\"patch_5\">\n    <path d=\"M 26.925 225.041719 \nL 244.365 225.041719 \n\" style=\"fill:none;stroke:#000000;stroke-linecap:square;stroke-linejoin:miter;stroke-width:0.8;\"/>\n   </g>\n   <g id=\"patch_6\">\n    <path d=\"M 26.925 7.601719 \nL 244.365 7.601719 \n\" style=\"fill:none;stroke:#000000;stroke-linecap:square;stroke-linejoin:miter;stroke-width:0.8;\"/>\n   </g>\n  </g>\n </g>\n <defs>\n  <clipPath id=\"p73bfe13822\">\n   <rect height=\"217.44\" width=\"217.44\" x=\"26.925\" y=\"7.601719\"/>\n  </clipPath>\n </defs>\n</svg>\n",
+      "text/plain": "<Figure size 432x288 with 1 Axes>"
+     },
+     "metadata": {
+      "needs_background": "light"
+     },
+     "output_type": "display_data"
+    },
+    {
+     "ename": "AttributeError",
+     "evalue": "module 'utils' has no attribute 'show_prob_cifar'",
+     "output_type": "error",
+     "traceback": [
+      "\u001b[0;31m---------------------------------------------------------------------------\u001b[0m",
+      "\u001b[0;31mAttributeError\u001b[0m                            Traceback (most recent call last)",
+      "\u001b[0;32m<ipython-input-10-ddc43f86b60f>\u001b[0m in \u001b[0;36m<module>\u001b[0;34m\u001b[0m\n\u001b[1;32m      4\u001b[0m \u001b[0mscores\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mnet\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mimage\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mview\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m,\u001b[0m\u001b[0;36m3072\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mto\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mdevice\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[1;32m      5\u001b[0m \u001b[0mprobs\u001b[0m \u001b[0;34m=\u001b[0m \u001b[0mF\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0msoftmax\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mscores\u001b[0m\u001b[0;34m,\u001b[0m \u001b[0mdim\u001b[0m\u001b[0;34m=\u001b[0m\u001b[0;36m1\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0;32m----> 6\u001b[0;31m \u001b[0mutils\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mshow_prob_cifar\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0mprobs\u001b[0m\u001b[0;34m.\u001b[0m\u001b[0mcpu\u001b[0m\u001b[0;34m(\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m)\u001b[0m\u001b[0;34m\u001b[0m\u001b[0;34m\u001b[0m\u001b[0m\n\u001b[0m",
+      "\u001b[0;31mAttributeError\u001b[0m: module 'utils' has no attribute 'show_prob_cifar'"
+     ]
+    }
+   ],
+   "source": [
+    "idx = randint(0, 10000-1)\n",
+    "image = test_data[idx]\n",
+    "utils.show(image)\n",
+    "scores = net(image.view(1,3072).to(device))\n",
+    "probs = F.softmax(scores, dim=1)\n",
+    "utils.show_prob_cifar(probs.cpu())"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ]
+}
