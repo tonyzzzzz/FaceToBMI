@@ -28,3 +28,4 @@ dependencies:
       - gym # RL
       - tensorboardx # TSP
       - fastprogress # TSP
+      - torchsummary
