@@ -12,6 +12,10 @@ source activate facetobmi
 
 conda deactivate
 
+# list all env
+
+conda info --envs
+
 # remove
 
 conda remove --name facetobmi --all
