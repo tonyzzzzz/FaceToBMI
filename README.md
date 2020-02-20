@@ -8,6 +8,18 @@ conda env create -f environment.yml
 
 source activate facetobmi
 
+# stop
+
+conda deactivate
+
+# remove
+
+conda remove --name facetobmi --all
+
+# Add dependencies
+
+conda create -n facetobmi numpy requests
+
 # Solve conflict with ROS
 
 **Linux**
