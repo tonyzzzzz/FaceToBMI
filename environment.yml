@@ -43,3 +43,5 @@ dependencies:
       - nteract-scrapbook
       - azureml-sdk[notebooks,contrib]>=1.0.30
       - git+https://github.com/youngpark/cocoapi.git#subdirectory=PythonAPI
+      - opencv-python>=3.4.2.17
+      - opencv-contrib-python>=3.4.2.17
