@@ -40,16 +40,16 @@ class FaceToBMIDataset(Dataset):
 
     def set_transform(self, type=None):
         if type == "train":
-            print('Using train transformation')
+            # print('Using train transformation')
             self.transform = data_transforms['train']
         elif type == "val":
-            print('Using validation transformation')
+            # print('Using validation transformation')
             self.transform = data_transforms['val']
         elif type == "test":
-            print('Using validation transformation')
+            # print('Using test transformation')
             self.transform = data_transforms['test']
         else:
-            print('Using default transformation')
+            # print('Using default transformation')
             self.transform = data_transforms['default']
 
 
